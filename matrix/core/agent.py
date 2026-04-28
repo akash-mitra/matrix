@@ -39,14 +39,15 @@ class AgentWorker:
 
     async def _handle(self, env: Envelope) -> None:
         if env.session_id:
-            # Caller pinned the id. Treat as new if no transcript exists yet.
             session_id = env.session_id
-            transcript = (
-                transcripts_dir_for(self.config.cwd) / f"{session_id}.jsonl"
-            )
-            is_new = not transcript.is_file()
         else:
-            session_id, is_new = self._threads.get_or_create(env.user_id)
+            session_id, _ = self._threads.get_or_create(env.user_id)
+        # Decide is_new from transcript existence, not from threads.json.
+        # A pinned id (rotated default, fresh UUID) or a stale threads.json
+        # entry can both reference an id that has no JSONL yet — those must
+        # be treated as new sessions for the SDK, not resume targets.
+        transcript = transcripts_dir_for(self.config.cwd) / f"{session_id}.jsonl"
+        is_new = not transcript.is_file()
         log.info(
             "agent %s: handling turn (user=%s session=%s new=%s)",
             self.config.name, env.user_id, session_id, is_new,
