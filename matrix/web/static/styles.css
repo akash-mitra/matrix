@@ -23,14 +23,19 @@ body { display: flex; height: 100vh; }
   border-bottom: 1px solid #2a2d35;
 }
 .sidebar-head select {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   background: #1a1d24;
   color: #e6e6e6;
   border: 1px solid #2a2d35;
   padding: 0.35rem 0.5rem;
   border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sidebar-head button {
+  flex: 0 0 auto;
   background: #1a1d24;
   color: #e6e6e6;
   border: 1px solid #2a2d35;
