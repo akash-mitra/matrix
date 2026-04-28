@@ -1,0 +1,17 @@
+name: assistant
+description: General-purpose personal assistant
+provider: claude_code
+model: claude-opus-4-7
+system_prompt: prompts/system.md
+permission_mode: bypassPermissions
+work_dir: work
+owner: default
+allowed_tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - Glob
+  - Grep
+  - WebSearch
+  - WebFetch

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Matrix</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="sidebar-head">
+        <select id="agent-select"></select>
+        <button id="new-chat" type="button" title="New chat">+</button>
+      </div>
+      <ul id="threads"></ul>
+    </aside>
+    <section id="chat">
+      <header>
+        <h1 id="thread-title">Matrix</h1>
+      </header>
+      <main id="messages"></main>
+      <form id="composer">
+        <textarea
+          id="input"
+          rows="3"
+          placeholder="Type a message…  (Cmd/Ctrl+Enter to send)"
+          required
+        ></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
