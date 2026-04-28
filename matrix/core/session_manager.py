@@ -41,10 +41,12 @@ class SessionManager:
             for event in state.backlog:
                 await queue.put(event)
             state.backlog.clear()
+            # Always attach to subscribers — even on a closed topic — so the
+            # cleanup in _gen()'s finally block can pop the topic once we've
+            # drained the backlog and sentinel.
+            state.subscribers.append(queue)
             if state.closed:
                 await queue.put(None)
-            else:
-                state.subscribers.append(queue)
 
         async def _gen() -> AsyncIterator[Event]:
             try:
@@ -82,8 +84,9 @@ class SessionManager:
                 return
             state.closed = True
             subs = list(state.subscribers)
-            if not subs:
-                # Nobody attached and we're done — nothing to deliver later.
-                self._topics.pop(topic, None)
+            # Keep the topic record around even with no subscribers: a turn
+            # can finish before the channel opens its SSE connection, and the
+            # late subscriber needs the buffered backlog and sentinel. The
+            # topic is reaped when the first subscriber finishes draining.
         for q in subs:
             await q.put(None)
