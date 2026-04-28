@@ -23,5 +23,6 @@ class Provider(Protocol):
         system_prompt: str,
         allowed_tools: list[str],
         permission_mode: str,
+        model: str,
         message: str,
     ) -> AsyncIterator[Event]: ...

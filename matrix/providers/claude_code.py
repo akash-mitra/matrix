@@ -50,6 +50,7 @@ class ClaudeCodeProvider:
         system_prompt: str,
         allowed_tools: list[str],
         permission_mode: str,
+        model: str,
         message: str,
     ) -> AsyncIterator[Event]:
         cwd.mkdir(parents=True, exist_ok=True)
@@ -62,6 +63,7 @@ class ClaudeCodeProvider:
             setting_sources=[],
             session_id=session_id if is_new_session else None,
             resume=None if is_new_session else session_id,
+            model=model or None,
         )
         client = ClaudeSDKClient(options=options)
 

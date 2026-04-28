@@ -60,6 +60,7 @@ class AgentWorker:
                 system_prompt=self.config.system_prompt,
                 allowed_tools=self.config.allowed_tools,
                 permission_mode=self.config.permission_mode,
+                model=self.config.model,
                 message=env.content,
             ):
                 await self._sessions.publish(env.reply_topic, event)
