@@ -40,7 +40,7 @@ class Harness:
             raise RuntimeError(f"No agents found in {self.agents_dir}")
         for cfg in configs:
             self._agent_configs[cfg.name] = cfg
-            self._providers[cfg.name] = self._build_provider(cfg.provider)
+            self._providers[cfg.name] = self._build_provider(cfg)
             self._threads[cfg.name] = Threads(cfg.threads_path)
         log.info("discovered agents: %s", list(self._agent_configs))
 
@@ -96,7 +96,7 @@ class Harness:
             log.info("spawned worker for (%s, %s)", agent, user_id)
 
     @staticmethod
-    def _build_provider(name: str) -> Provider:
-        if name == "claude_code":
-            return ClaudeCodeProvider()
-        raise ValueError(f"unknown provider: {name}")
+    def _build_provider(cfg: AgentConfig) -> Provider:
+        if cfg.provider == "claude_code":
+            return ClaudeCodeProvider(features=cfg.claude_code)
+        raise ValueError(f"unknown provider: {cfg.provider}")

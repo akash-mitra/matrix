@@ -147,7 +147,7 @@ agents/<name>/                   # in-repo (config + auto-managed thread map)
   work/                          # cwd handed to the provider; transcripts encode from this
 ```
 
-`work/` is deliberately outside the matrix repo. The `claude` CLI walks up from cwd to find a project key for its auto-memory and CLAUDE.md auto-discovery; placing per-agent work dirs under the matrix git root would let every agent inherit the matrix repo's developer-mode context (and each other's, once we have multiple). The provider also passes `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` as belt-and-suspenders — see §5 *"Why Matrix owns memory, not the CLI"*.
+`work/` is deliberately outside the matrix repo. The `claude` CLI walks up from cwd to find a project key for its auto-memory and CLAUDE.md auto-discovery; placing per-agent work dirs under the matrix git root would let every agent inherit the matrix repo's developer-mode context (and each other's, once we have multiple). The provider also gates the CLI's other auto-injection paths (plugin skills, deferred tools, claude.ai MCP connectors) — see §5 *"Why Matrix owns context, not the CLI"*. Per-agent overrides live in the `claude_code:` block.
 
 `agent.yaml` is loaded by [matrix/core/registry.py](matrix/core/registry.py) into an `AgentConfig`. The schema reserves names for future fields (`mcp_servers`, `cron`, `channels`, `sub_agents`) so configs stay forward-compatible even as the parser ignores them today.
 
@@ -253,16 +253,27 @@ The channel knows what to do with a topic — render to a browser tab, post to a
 
 The `claude-agent-sdk` writes to `~/.claude/projects/<encoded-cwd>/...` and we don't fight that. Each agent's cwd is its own `~/.matrix/agents/<name>/work/`, so transcripts auto-segregate per agent. We read from there directly. The cost is one filter (`entrypoint == "sdk-py"`); the benefit is no duplicate state and full compatibility with anything else inspecting the same directory.
 
-### Why Matrix owns memory, not the CLI
+### Why Matrix owns context, not the CLI
 
-The `claude` CLI has two built-in context-discovery features that fire on every invocation: **auto-memory** (walks up from cwd to find `~/.claude/projects/<encoded>/memory/MEMORY.md` and injects it into the system prompt) and **CLAUDE.md auto-discovery** (walks up to find a `CLAUDE.md` and injects it). Both run regardless of `--system-prompt` or `setting_sources=[]` — they're separate switches.
+The `claude` CLI has five separate auto-injection paths, each with its own switch:
 
-Left on, every agent in this repo would inherit the matrix-repo's `MEMORY.md` (because every agent's cwd sits beneath the matrix git root from the CLI's point of view). The user's developer-mode context — what they're building, who they are, what they're working on — would silently leak into the assistant, the future coding agent, and any other agent we add. Two structural defenses:
+1. **Auto-memory** — walks up cwd to find the nearest `MEMORY.md` in `~/.claude/projects/<encoded>/memory/`.
+2. **CLAUDE.md auto-discovery** — walks up cwd to find the nearest `CLAUDE.md`.
+3. **Plugin-marketplace skills** — emits a `skill_listing` attachment with descriptions of every installed plugin-skill (~2k tokens), and exposes the `Skill` tool to invoke them.
+4. **Deferred tool registry** — loads the full built-in tool catalog (`TodoWrite`, `EnterPlanMode`, `Monitor`, `CronCreate`, `ToolSearch`, ...) so the agent can lazy-load any of their schemas.
+5. **Auto-discovered MCP servers** — loads `~/.claude.json` connectors (claude.ai-linked Gmail/Drive/Calendar/...).
 
-1. **Out-of-repo cwd.** `work/` lives at `~/.matrix/agents/<name>/work/`, so the CLI's walk-up never crosses the matrix repo.
-2. **Explicit kill-switches in the provider.** `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on every subprocess.
+Each runs regardless of `--system-prompt` and regardless of `setting_sources=[]` — they're separate channels. Without explicit clamps, every agent in this repo inherits all five: the matrix-repo `MEMORY.md`, the developer's `CLAUDE.md`, the developer's plugin skills, the dev-mode tool catalog, and the user's claude.ai connectors. That's a lot of latent context, all of it about the *operator* of Matrix rather than the *user* the agent is serving.
 
-Either alone would mostly work. Both is the contract: Matrix owns memory and context (or it doesn't exist for that agent). When transcript-driven memory ships in a future phase, it'll be loaded by Matrix and passed in as part of the system prompt or input — never re-enabled via CLI auto-injection.
+Two structural defenses, then four per-agent toggles plus one architectural invariant:
+
+- **Structural** — out-of-repo cwd at `~/.matrix/agents/<name>/work/`, so walk-up never crosses the matrix repo.
+- **Per-agent toggles** — `claude_code:` block in `agent.yaml` (see [AGENTS.md §4.9](AGENTS.md)). All four default to off (`load_auto_memory`, `load_claude_mds`, `load_skills`, `load_deferred_tools`); each agent opts back in to what it needs.
+- **Architectural invariant** — `--strict-mcp-config` is hardcoded in the provider, not toggleable. Matrix is the only thing that adds MCP servers. Auto-discovered ones never reach an agent.
+
+Either the structural fence or the explicit clamps would mostly work. Both is the contract: every piece of context entering an agent's prompt was either declared in `agent.yaml` or written by Matrix code. When transcript-driven memory ships in a future phase, it'll be loaded by Matrix and passed in as part of the system prompt — never re-enabled via CLI auto-injection.
+
+The flag-based design also gives a clean opt-in path for agents that *do* want CLI context. A coding agent will likely want `load_skills: true` (for `init`/`review`/`security-review`) and `load_deferred_tools: true` (for `TodoWrite`/`Monitor`). It declares those in its yaml; the assistant doesn't.
 
 ## 6. Conventions and gotchas
 

@@ -89,18 +89,35 @@ The web UI knows about `message.start | message.delta | tool.use | tool.result |
 
 The parser ignores unknown keys today. The names `mcp_servers`, `cron`, `channels`, `sub_agents` are reserved. If you add a key that overlaps with one of these reserved names, make sure the semantics line up with the future plans in [README.md](README.md#whats-deferred).
 
-### 4.9 Matrix owns memory and context — the CLI is a transport
+The `claude_code:` block is implemented (see §4.9) — its sub-keys are also reserved.
 
-The `claude` CLI has two built-in context-discovery features Matrix deliberately suppresses:
+### 4.9 Matrix owns context — the CLI is a transport
 
-- **Auto-memory**: walks up from cwd to find `~/.claude/projects/<encoded>/memory/MEMORY.md` and injects it into the system prompt.
-- **CLAUDE.md auto-discovery**: walks up from cwd to find a `CLAUDE.md` and injects it.
+The `claude` CLI has several auto-discovery / auto-injection paths that fire regardless of `--system-prompt` or `setting_sources=[]`. Each one is a separate switch with its own behavior. Matrix turns them all **off by default** and lets each agent opt in to specific paths via `agent.yaml`'s `claude_code:` block.
 
-Both run regardless of whether you pass `--system-prompt` or `setting_sources=[]`. If left on, every agent in this repo would inherit the matrix-repo's MEMORY.md (because every agent's cwd sits beneath the matrix git root from the CLI's point of view) — leaking your developer-mode context into the assistant, the future coding agent, and so on.
+| Feature | What it does if left on | Matrix-strict knob |
+|---|---|---|
+| Auto-memory | Walks up cwd → injects nearest `MEMORY.md` from `~/.claude/projects/<encoded>/memory/` | env `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` |
+| CLAUDE.md auto-discovery | Walks up cwd → injects nearest `CLAUDE.md` | env `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` |
+| Plugin-marketplace skills | Injects `skill_listing` attachment (~2k tokens) describing every installed plugin-skill, plus the `Skill` invocation tool | env `CLAUDE_CODE_DISABLE_ATTACHMENTS=1` |
+| Deferred tool registry | Loads the full built-in tool catalog (`TodoWrite`, `EnterPlanMode`, `Monitor`, `CronCreate`, `ToolSearch`, ...) — the agent can name them and lazy-load schemas | `tools=allowed_tools` (restricts registry to the allowlist) |
+| Auto-discovered MCP servers | Loads `~/.claude.json` connectors (claude.ai-linked Gmail/Drive/Calendar, etc.) | `--strict-mcp-config` (whitelists only Matrix-passed servers) |
 
-The provider in [matrix/providers/claude_code.py](matrix/providers/claude_code.py) sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on every subprocess. The directory layout in §3 is the structural belt; the env vars are the suspenders. Don't remove either without the other, and don't introduce CLI invocations from Matrix that bypass the provider.
+The default for every agent: all CLI-side context paths off. To opt one back in, declare it in the agent's `agent.yaml`:
 
-When a Matrix-owned memory system arrives (deferred, see §7 #1), it'll be read by Matrix and passed in as part of the system prompt or as input — never re-enabled via the CLI's auto-injection.
+```yaml
+claude_code:
+  load_auto_memory: false       # default; flip to true to allow MEMORY.md injection from cwd's project key
+  load_claude_mds: false        # default; flip to true to allow CLAUDE.md walk-up
+  load_skills: false            # default; flip to true to expose plugin-marketplace skills + Skill tool
+  load_deferred_tools: false    # default; flip to true to expose the full CLI tool catalog
+```
+
+`--strict-mcp-config` is **not** a per-agent toggle — it's an architectural invariant. The CLI must only see MCP servers that Matrix has explicitly declared (today: none; future: agent.yaml's reserved `mcp_servers:` block). No exceptions.
+
+The structural defenses (out-of-repo cwd from §3, `setting_sources=[]`) plus the explicit env-var/option clamps above mean the contract is: **every piece of context entering an agent's prompt was either declared in `agent.yaml` or written by Matrix code**. There is no implicit injection path. Don't introduce CLI invocations that bypass [matrix/providers/claude_code.py](matrix/providers/claude_code.py); don't add an env var that re-enables a default we're suppressing.
+
+When a Matrix-owned memory system arrives (deferred, see §7 #1), it'll be read by Matrix and passed in as part of the system prompt — never re-enabled via the CLI's auto-injection.
 
 ## 5. Common tasks (and how to do them)
 
@@ -112,6 +129,8 @@ $EDITOR agents/<name>/agent.yaml                 # see agents/assistant/agent.ya
 $EDITOR agents/<name>/prompts/system.md
 # work/ is auto-created at ~/.matrix/agents/<name>/work/ on first turn
 ```
+
+Defaults are matrix-strict (no auto-memory, no CLAUDE.md, no plugin-skills, no deferred CLI tools, no auto-discovered MCP). If the agent legitimately needs one of those — e.g. a coding agent that wants `TodoWrite` and the `init`/`review` skills — opt in with the per-flag `claude_code:` block in its `agent.yaml`. See §4.9 for the full table.
 
 No Python changes if the provider already exists. Restart Matrix; the registry picks it up.
 

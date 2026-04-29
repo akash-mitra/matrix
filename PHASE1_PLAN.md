@@ -108,6 +108,14 @@ allowed_tools:
 # if you need an absolute path (escape hatch for tests). See AGENTS.md §4.9.
 owner: default                  # user_id used for system-initiated messages
 
+# Optional. All four flags default to false (Matrix-strict — see AGENTS.md §4.9).
+# Flip a flag to opt the agent back in to one specific CLI auto-injection path.
+# claude_code:
+#   load_auto_memory: false       # MEMORY.md walk-up from cwd
+#   load_claude_mds: false        # CLAUDE.md walk-up from cwd
+#   load_skills: false            # plugin-marketplace skill_listing + Skill tool
+#   load_deferred_tools: false    # full built-in tool catalog (TodoWrite, Monitor, ...)
+
 # Reserved for later phases — schema parser ignores unknown keys for now,
 # but these names are committed so configs stay forward-compatible:
 # mcp_servers: []

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -19,6 +19,21 @@ RUNTIME_ROOT = Path.home() / ".matrix" / "agents"
 
 
 @dataclass(frozen=True)
+class ClaudeCodeFeatures:
+    """Per-agent toggles for Claude Code CLI features Matrix suppresses by default.
+
+    All default to False = matrix-strict (the CLI is treated as a transport,
+    not a context provider — see AGENTS.md §4.9). Each flag opts the agent
+    *back in* to one specific CLI auto-injection path. Default-off is the
+    contract; flipping a flag is an explicit declaration of intent.
+    """
+    load_auto_memory: bool = False    # CLI walks up cwd → injects nearest MEMORY.md
+    load_claude_mds: bool = False     # CLI walks up cwd → injects nearest CLAUDE.md
+    load_skills: bool = False         # plugin marketplace skills (skill_listing attachment + Skill tool)
+    load_deferred_tools: bool = False # full built-in tool registry (TodoWrite, EnterPlanMode, Monitor, ...)
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     name: str
     description: str
@@ -31,6 +46,7 @@ class AgentConfig:
     threads_path: Path
     owner: str
     raw: dict
+    claude_code: ClaudeCodeFeatures = field(default_factory=ClaudeCodeFeatures)
 
 
 def load_agents(agents_dir: Path) -> list[AgentConfig]:
@@ -54,6 +70,13 @@ def _parse(agent_dir: Path, cfg_path: Path) -> AgentConfig:
     # paths are honored as-is (escape hatch for tests / unusual setups).
     raw_work = Path(raw.get("work_dir", "work"))
     work_dir = raw_work if raw_work.is_absolute() else RUNTIME_ROOT / raw["name"] / raw_work
+    cc_raw = raw.get("claude_code") or {}
+    claude_code = ClaudeCodeFeatures(
+        load_auto_memory=bool(cc_raw.get("load_auto_memory", False)),
+        load_claude_mds=bool(cc_raw.get("load_claude_mds", False)),
+        load_skills=bool(cc_raw.get("load_skills", False)),
+        load_deferred_tools=bool(cc_raw.get("load_deferred_tools", False)),
+    )
     return AgentConfig(
         name=raw["name"],
         description=raw.get("description", ""),
@@ -66,4 +89,5 @@ def _parse(agent_dir: Path, cfg_path: Path) -> AgentConfig:
         threads_path=agent_dir / "threads.json",
         owner=raw.get("owner", "default"),
         raw=raw,
+        claude_code=claude_code,
     )
