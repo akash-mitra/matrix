@@ -7,6 +7,16 @@ from pathlib import Path
 
 import yaml
 
+# Per-agent runtime state lives outside the repo. Each agent's cwd resolves
+# to <RUNTIME_ROOT>/<name>/work — deliberately *not* under the matrix git
+# root. The `claude` CLI walks up from cwd to find a project key for its
+# auto-memory and CLAUDE.md auto-discovery; placing work dirs under the
+# matrix repo would let one agent inherit the user's matrix-repo MEMORY.md
+# and any other agent's parent context. Provider-level env vars (see
+# providers/claude_code.py) belt-and-suspender this; the directory layout
+# is the structural guarantee.
+RUNTIME_ROOT = Path.home() / ".matrix" / "agents"
+
 
 @dataclass(frozen=True)
 class AgentConfig:
@@ -40,7 +50,10 @@ def load_agents(agents_dir: Path) -> list[AgentConfig]:
 def _parse(agent_dir: Path, cfg_path: Path) -> AgentConfig:
     raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
     prompt_path = agent_dir / raw["system_prompt"]
-    work_dir = agent_dir / raw.get("work_dir", "work")
+    # `work_dir`: relative paths resolve under RUNTIME_ROOT/<name>/, absolute
+    # paths are honored as-is (escape hatch for tests / unusual setups).
+    raw_work = Path(raw.get("work_dir", "work"))
+    work_dir = raw_work if raw_work.is_absolute() else RUNTIME_ROOT / raw["name"] / raw_work
     return AgentConfig(
         name=raw["name"],
         description=raw.get("description", ""),

@@ -76,8 +76,7 @@ matrix/
     assistant/
       agent.yaml          # declarative config
       prompts/system.md
-      work/               # cwd for the SDK; transcripts encode from this
-      threads.json        # default thread per user_id (auto-managed)
+      threads.json        # default thread per user_id (auto-managed, gitignored)
 
   shared/                 # cross-agent tools / skills (empty in phase 1)
 
@@ -85,6 +84,8 @@ matrix/
   Concepts.md             # architecture and design rationale
   AGENTS.md               # contract for AI agents reading this repo
 ```
+
+Per-agent runtime work directories live **outside the repo** at `~/.matrix/agents/<name>/work/`. That cwd is what the `claude-agent-sdk` subprocess sees, and what determines the encoded transcript path under `~/.claude/projects/`. Keeping it outside the matrix git tree prevents the CLI's auto-memory and CLAUDE.md walk-up from inheriting the repo's developer-mode context. See [AGENTS.md §4.9](AGENTS.md).
 
 ## Assumptions
 
@@ -99,7 +100,7 @@ matrix/
 In rough order of likely arrival:
 
 1. **Transcript-driven memory** — surfacing things you've told an agent in past threads.
-2. **Coding agent.** Its own provider configuration, with `work/` becoming a workspace for `git clone` and worktrees, and tool restrictions tuned for code review/editing.
+2. **Coding agent.** Its own provider configuration, with `~/.matrix/agents/coding/work/` becoming a workspace for `git clone` and worktrees, and tool restrictions tuned for code review/editing.
 3. **Cron-triggered runs.** A scheduler in the harness that emits `Envelope`s with `source_channel="cron"`. Implies durable inbox.
 4. **More channels.** Telegram bot, email (IMAP poll + SMTP send), an HTTP API for programmatic use.
 5. **Orchestrator agent + sub-agent-as-tool.** A custom tool exposed to the orchestrator's provider that submits to a sibling agent's inbox and awaits the reply.

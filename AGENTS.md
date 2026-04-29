@@ -42,12 +42,16 @@ matrix/
   web/static/             # index.html, app.js, styles.css — vanilla JS, no build
   __main__.py             # `uv run matrix` entrypoint
 
-agents/<name>/
-  agent.yaml              # declarative config (provider, model, prompt, tools, ...)
-  prompts/system.md       # system prompt for the agent
-  work/                   # cwd handed to the provider; transcripts encode from this
-  threads.json            # auto-managed; do not hand-edit while Matrix is running
+agents/<name>/                         # in-repo: config + auto-managed runtime state
+  agent.yaml                           # declarative config (provider, model, prompt, tools, ...)
+  prompts/system.md                    # system prompt for the agent
+  threads.json                         # auto-managed; do not hand-edit while Matrix is running
+
+~/.matrix/agents/<name>/               # out-of-repo: per-agent runtime state
+  work/                                # cwd handed to the provider; transcripts encode from this
 ```
+
+The agent's `cwd` (its `work/` dir) lives **outside the matrix repo on purpose** — see §4.9. The repo holds declarative config; `~/.matrix/` holds runtime state that the CLI sees. `threads.json` stays in-repo because it's gitignored and doesn't influence what the CLI walks up to find. Both behaviors are reflected in [.gitignore](.gitignore).
 
 ## 4. The contract
 
@@ -71,7 +75,7 @@ Matrix never reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc. The provider reli
 
 ### 4.5 Don't relocate transcripts
 
-The `claude-agent-sdk` writes JSONL to `~/.claude/projects/<encoded-cwd>/<id>.jsonl`. Matrix reads from there. We don't move them, we don't proxy them, we don't symlink them. If you want a per-agent view, use the fact that each agent's `cwd` is its own `work/` directory — encoding handles the rest.
+The `claude-agent-sdk` writes JSONL to `~/.claude/projects/<encoded-cwd>/<id>.jsonl`. Matrix reads from there. We don't move them, we don't proxy them, we don't symlink them. If you want a per-agent view, use the fact that each agent's `cwd` is `~/.matrix/agents/<name>/work/` — encoding handles the rest, and the encoded project key is unique per agent.
 
 ### 4.6 The SessionManager backlog is load-bearing
 
@@ -85,14 +89,28 @@ The web UI knows about `message.start | message.delta | tool.use | tool.result |
 
 The parser ignores unknown keys today. The names `mcp_servers`, `cron`, `channels`, `sub_agents` are reserved. If you add a key that overlaps with one of these reserved names, make sure the semantics line up with the future plans in [README.md](README.md#whats-deferred).
 
+### 4.9 Matrix owns memory and context — the CLI is a transport
+
+The `claude` CLI has two built-in context-discovery features Matrix deliberately suppresses:
+
+- **Auto-memory**: walks up from cwd to find `~/.claude/projects/<encoded>/memory/MEMORY.md` and injects it into the system prompt.
+- **CLAUDE.md auto-discovery**: walks up from cwd to find a `CLAUDE.md` and injects it.
+
+Both run regardless of whether you pass `--system-prompt` or `setting_sources=[]`. If left on, every agent in this repo would inherit the matrix-repo's MEMORY.md (because every agent's cwd sits beneath the matrix git root from the CLI's point of view) — leaking your developer-mode context into the assistant, the future coding agent, and so on.
+
+The provider in [matrix/providers/claude_code.py](matrix/providers/claude_code.py) sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on every subprocess. The directory layout in §3 is the structural belt; the env vars are the suspenders. Don't remove either without the other, and don't introduce CLI invocations from Matrix that bypass the provider.
+
+When a Matrix-owned memory system arrives (deferred, see §7 #1), it'll be read by Matrix and passed in as part of the system prompt or as input — never re-enabled via the CLI's auto-injection.
+
 ## 5. Common tasks (and how to do them)
 
 ### Adding a new agent
 
 ```sh
-mkdir -p agents/<name>/{prompts,work,tools,skills}
-$EDITOR agents/<name>/agent.yaml      # see agents/assistant/agent.yaml
+mkdir -p agents/<name>/{prompts,tools,skills}    # in-repo: config
+$EDITOR agents/<name>/agent.yaml                 # see agents/assistant/agent.yaml
 $EDITOR agents/<name>/prompts/system.md
+# work/ is auto-created at ~/.matrix/agents/<name>/work/ on first turn
 ```
 
 No Python changes if the provider already exists. Restart Matrix; the registry picks it up.
@@ -123,7 +141,7 @@ Phase 1 only uses tools built into the `claude` CLI (`Read`, `Write`, `Bash`, et
 - **The same agent's two simultaneous web tabs serialize their messages.** The `(agent, user_id)` queue is single-consumer. Two browser tabs as the same user are *the same user*; they share the queue.
 - **`threads.json` shows a session_id with no transcript file.** The UI just rotated the default; nothing has been sent yet. The next message will create the transcript.
 - **The UI's thread sidebar takes a moment to update after sending.** It refreshes on `message.end` — by design, since the SDK auto-titler may update the title at the end.
-- **A non-Matrix `claude` invocation in the same project root pollutes the cwd's transcripts.** It does, but the reader filters by `entrypoint == "sdk-py"` so the UI ignores them. The files still exist on disk; that's a `claude` CLI fact, not a Matrix problem.
+- **A non-Matrix `claude` invocation in the same cwd pollutes the cwd's transcripts.** It does, but the reader filters by `entrypoint == "sdk-py"` so the UI ignores them. With per-agent cwd under `~/.matrix/agents/<name>/work/`, this is rare in practice — you'd have to `cd` into that dir and run `claude` manually — but the filter is still load-bearing.
 - **Killing Matrix mid-turn leaves a `claude` subprocess for a moment.** SDK disconnect on cleanup; usually the OS reaps quickly. If you see lingering subprocesses, that's a real bug.
 
 ## 7. Future work — what's on deck
@@ -131,7 +149,7 @@ Phase 1 only uses tools built into the `claude` CLI (`Read`, `Write`, `Bash`, et
 These are *deferred*, not vetoed. If your change is in service of one of these and the user has asked, fine. If you're tempted to do one preemptively, ask first.
 
 1. Transcript-driven memory.
-2. Coding agent (Claude Code only; uses git worktrees in `agents/coding/work/<repo>/`).
+2. Coding agent (Claude Code only; uses git worktrees in `~/.matrix/agents/coding/work/<repo>/`).
 3. Cron-triggered runs (durable inbox required).
 4. Telegram, email, and HTTP API channels.
 5. Orchestrator + sub-agent-as-tool.

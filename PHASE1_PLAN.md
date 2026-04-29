@@ -65,10 +65,12 @@ matrix/                       # repo root (this dir)
     assistant/
       agent.yaml
       prompts/system.md
-      work/                   # cwd for SDK; transcripts encode from this
       tools/                  # agent-specific (empty for now)
       skills/                 # agent-specific (empty for now)
-      threads.json            # {user_id: session_id} default-thread map
+      threads.json            # {user_id: session_id} default-thread map (gitignored)
+  # Note: per-agent SDK cwd lives at ~/.matrix/agents/<name>/work/ — outside
+  # the repo so the CLI's auto-memory / CLAUDE.md walk-up doesn't inherit
+  # the matrix repo's developer context. See AGENTS.md §4.9.
 
   shared/
     tools/                    # cross-agent (empty for now)
@@ -102,7 +104,8 @@ allowed_tools:
   - Grep
   - WebSearch
   - WebFetch
-work_dir: work                  # relative to agent dir; SDK cwd
+# work_dir defaults to ~/.matrix/agents/<name>/work/. Set explicitly only
+# if you need an absolute path (escape hatch for tests). See AGENTS.md §4.9.
 owner: default                  # user_id used for system-initiated messages
 
 # Reserved for later phases — schema parser ignores unknown keys for now,

@@ -61,6 +61,18 @@ class ClaudeCodeProvider:
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
             setting_sources=[],
+            # Tell the `claude` CLI to skip its built-in context discovery.
+            # `setting_sources=[]` already suppresses settings/hooks loading,
+            # but auto-memory and CLAUDE.md auto-discovery are separate
+            # internal switches: passing `--system-prompt` does NOT replace
+            # them. Without these, the CLI walks up from cwd to inject the
+            # nearest MEMORY.md / CLAUDE.md it finds, regardless of which
+            # agent we're running. Matrix owns memory/context (or it doesn't
+            # exist) — the CLI is a transport, not a context provider.
+            env={
+                "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+                "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+            },
             session_id=session_id if is_new_session else None,
             resume=None if is_new_session else session_id,
             model=model or None,

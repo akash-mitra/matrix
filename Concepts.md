@@ -134,16 +134,20 @@ The `is_new` detection deserves a callout. The default flow is: the channel eith
 
 ### 3.8 AgentConfig + Registry
 
-Each agent is a directory under `agents/`. The minimal contents:
+Each agent is a directory under `agents/` (config in repo) plus a runtime working directory under `~/.matrix/agents/<name>/` (state on disk, outside repo):
 
 ```
-agents/<name>/
-  agent.yaml             # declarative config
-  prompts/system.md      # system prompt loaded by the provider
-  work/                  # cwd for the provider; transcripts encode from this
-  threads.json           # auto-managed
-  tools/  skills/        # agent-specific (empty in phase 1)
+agents/<name>/                   # in-repo (config + auto-managed thread map)
+  agent.yaml                     # declarative config
+  prompts/system.md              # system prompt loaded by the provider
+  threads.json                   # auto-managed
+  tools/  skills/                # agent-specific (empty in phase 1)
+
+~/.matrix/agents/<name>/         # out-of-repo (per-agent runtime state)
+  work/                          # cwd handed to the provider; transcripts encode from this
 ```
+
+`work/` is deliberately outside the matrix repo. The `claude` CLI walks up from cwd to find a project key for its auto-memory and CLAUDE.md auto-discovery; placing per-agent work dirs under the matrix git root would let every agent inherit the matrix repo's developer-mode context (and each other's, once we have multiple). The provider also passes `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` as belt-and-suspenders — see §5 *"Why Matrix owns memory, not the CLI"*.
 
 `agent.yaml` is loaded by [matrix/core/registry.py](matrix/core/registry.py) into an `AgentConfig`. The schema reserves names for future fields (`mcp_servers`, `cron`, `channels`, `sub_agents`) so configs stay forward-compatible even as the parser ignores them today.
 
@@ -182,7 +186,7 @@ The web client uses `EventSource` to subscribe to the SSE stream. SSE was chosen
 
 ### 3.11 Transcript reader
 
-The `claude` CLI writes one JSONL file per session under `~/.claude/projects/<encoded-cwd>/<session_id>.jsonl`. The encoding replaces `/` and `.` in the absolute cwd with `-`. Multiple agents in the same project all share that one folder, but each agent has its own `cwd` (its `work/` directory) so they get their own subfolders.
+The `claude` CLI writes one JSONL file per session under `~/.claude/projects/<encoded-cwd>/<session_id>.jsonl`. The encoding replaces `/` and `.` in the absolute cwd with `-`. Each agent's cwd is its own `~/.matrix/agents/<name>/work/` dir, so agents get their own non-overlapping encoded project keys.
 
 [matrix/transcripts/reader.py](matrix/transcripts/reader.py) reads those files for the thread list and replay endpoints. It filters by `entrypoint == "sdk-py"` so interactive `claude` runs or IDE sessions in the same cwd don't show up in Matrix's UI.
 
@@ -247,7 +251,18 @@ The channel knows what to do with a topic — render to a browser tab, post to a
 
 ### Why we don't relocate transcripts
 
-The `claude-agent-sdk` writes to `~/.claude/projects/<encoded-cwd>/...` and we don't fight that. Each agent's `work/` is its `cwd`, so transcripts auto-segregate per agent. We read from there directly. The cost is one filter (`entrypoint == "sdk-py"`); the benefit is no duplicate state and full compatibility with anything else inspecting the same directory.
+The `claude-agent-sdk` writes to `~/.claude/projects/<encoded-cwd>/...` and we don't fight that. Each agent's cwd is its own `~/.matrix/agents/<name>/work/`, so transcripts auto-segregate per agent. We read from there directly. The cost is one filter (`entrypoint == "sdk-py"`); the benefit is no duplicate state and full compatibility with anything else inspecting the same directory.
+
+### Why Matrix owns memory, not the CLI
+
+The `claude` CLI has two built-in context-discovery features that fire on every invocation: **auto-memory** (walks up from cwd to find `~/.claude/projects/<encoded>/memory/MEMORY.md` and injects it into the system prompt) and **CLAUDE.md auto-discovery** (walks up to find a `CLAUDE.md` and injects it). Both run regardless of `--system-prompt` or `setting_sources=[]` — they're separate switches.
+
+Left on, every agent in this repo would inherit the matrix-repo's `MEMORY.md` (because every agent's cwd sits beneath the matrix git root from the CLI's point of view). The user's developer-mode context — what they're building, who they are, what they're working on — would silently leak into the assistant, the future coding agent, and any other agent we add. Two structural defenses:
+
+1. **Out-of-repo cwd.** `work/` lives at `~/.matrix/agents/<name>/work/`, so the CLI's walk-up never crosses the matrix repo.
+2. **Explicit kill-switches in the provider.** `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` on every subprocess.
+
+Either alone would mostly work. Both is the contract: Matrix owns memory and context (or it doesn't exist for that agent). When transcript-driven memory ships in a future phase, it'll be loaded by Matrix and passed in as part of the system prompt or input — never re-enabled via CLI auto-injection.
 
 ## 6. Conventions and gotchas
 
