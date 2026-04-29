@@ -88,5 +88,7 @@ class SessionManager:
             # can finish before the channel opens its SSE connection, and the
             # late subscriber needs the buffered backlog and sentinel. The
             # topic is reaped when the first subscriber finishes draining.
+            # TODO(#4): if no subscriber ever attaches, the record leaks until
+            # process restart. Acceptable for phase 1; revisit with a TTL/LRU.
         for q in subs:
             await q.put(None)
